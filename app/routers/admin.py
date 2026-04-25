@@ -25,12 +25,32 @@ class SlotStatusUpdate(BaseModel):
     reason: str | None = None
 
 
-def _require_admin(user: dict):
-    if user.get("role") not in ("station_admin", "admin"):
-        raise HTTPException(
-            status_code=403,
-            detail=error_response("FORBIDDEN", "Admin access required.")
-        )
+async def _verify_station_access(station_id: UUID, user: dict, db: AsyncSession):
+    """
+    FAANG-level Authorization: Check if user has permission for THIS specific station.
+    - super_admin: Allow all.
+    - station_admin: Must exist in station_managers for this station.
+    - others: Forbidden.
+    """
+    role = user.get("role")
+    
+    if role == "super_admin":
+        return
+        
+    if role == "station_admin" or role == "admin":
+        # Check ownership table
+        res = await db.execute(text("""
+            SELECT 1 FROM station_managers 
+            WHERE user_id = :user_id AND station_id = :station_id
+        """), {"user_id": user["sub"], "station_id": str(station_id)})
+        
+        if res.scalar():
+            return
+
+    raise HTTPException(
+        status_code=403,
+        detail=error_response("FORBIDDEN", "You do not have permission to manage this station.")
+    )
 
 
 @router.patch("/stations/{station_id}/slots/{slot_id}")
@@ -47,7 +67,8 @@ async def admin_update_slot_status(
     If marking as OFFLINE, cancel all active/pending bookings on that slot
     and send in-app notifications to affected users.
     """
-    _require_admin(user)
+    # Enforce granular ownership check
+    await _verify_station_access(station_id, user, db)
 
     # Verify slot belongs to station
     slot = await db.execute(text("""
@@ -129,7 +150,8 @@ async def admin_get_station_bookings(
     db: AsyncSession = Depends(get_db),
 ):
     """Admin: View all bookings for a station with optional status filter."""
-    _require_admin(user)
+    # Enforce granular ownership check
+    await _verify_station_access(station_id, user, db)
 
     query = """
         SELECT b.id, b.user_id, b.slot_id, b.status, b.scheduled_start, b.scheduled_end,

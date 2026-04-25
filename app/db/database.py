@@ -34,11 +34,14 @@ async def create_db_engine():
         raise e
 
 async def get_db():
-    """Dependency for getting async database session."""
+    """
+    Dependency for getting async database session.
+    Auto-commit is DISABLED to prevent data corruption on partial service failures.
+    Mutations must use `async with db.begin()` for atomicity.
+    """
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()
         except Exception:
             await session.rollback()
             raise

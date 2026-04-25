@@ -64,7 +64,11 @@ def create_app() -> FastAPI:
     from app.middleware.error_handler import register_error_handlers
     register_error_handlers(app)
 
-    # Rate limiter (outermost — runs before all routing)
+    # Correlation ID (outermost for maximum tracing)
+    from app.middleware.correlation import CorrelationIdMiddleware
+    app.add_middleware(CorrelationIdMiddleware)
+
+    # Rate limiter
     from app.middleware.rate_limiter import RateLimiterMiddleware
     app.add_middleware(RateLimiterMiddleware)
 

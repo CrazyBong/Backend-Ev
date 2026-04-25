@@ -17,14 +17,8 @@ router = APIRouter()
 
 @router.post("/otp/send", response_model=SendOTPResponse)
 async def request_otp(payload: SendOTPRequest):
-    try:
-        data = await send_otp(payload.phone)
-        return SendOTPResponse(**data)
-    except OTPRateLimitError as e:
-        raise HTTPException(
-            status_code=429,
-            detail={"code": "OTP_LIMIT_EXCEEDED", "message": str(e), "details": {"retry_after_seconds": e.retry_after_seconds}}
-        )
+    data = await send_otp(payload.phone)
+    return SendOTPResponse(**data)
 
 @router.post("/otp/verify", response_model=TokenPayload)
 async def confirm_otp(payload: VerifyOTPRequest, db: AsyncSession = Depends(get_db)):

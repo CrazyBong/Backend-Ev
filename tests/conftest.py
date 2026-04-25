@@ -69,8 +69,11 @@ async def clean_redis():
 @pytest.fixture
 async def client(db_session):
     """Client with DB dependency overridden to use the per-test session."""
-    def _override_get_db():
-        yield db_session
+    async def _override_get_db():
+        try:
+            yield db_session
+        finally:
+            await db_session.rollback()
 
     app.dependency_overrides[get_db] = _override_get_db
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -142,6 +145,12 @@ async def seed_slot(db_session, seed_station_admin):
         "hours": json.dumps({"open":"00:00", "close":"23:59", "days":[1,2,3,4,5,6,7]}),
         "admin_id": str(seed_station_admin.id)
     })
+    
+    # Link station admin in station_managers table
+    await db_session.execute(text("""
+        INSERT INTO station_managers (user_id, station_id)
+        VALUES (:user_id, :station_id)
+    """), {"user_id": str(seed_station_admin.id), "station_id": str(station_id)})
     
     slot_id = uuid.uuid4()
     await db_session.execute(text("""

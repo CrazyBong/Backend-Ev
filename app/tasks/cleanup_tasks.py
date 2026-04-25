@@ -16,7 +16,7 @@ async def release_abandoned_locks(db: AsyncSession):
         query = text(f"""
             WITH expired_bookings AS (
                 UPDATE bookings
-                SET status = 'CANCELLED_BY_ADMIN',
+                SET status = 'CANCELLED_BY_SYSTEM',
                     cancellation_reason = 'Payment timeout',
                     updated_at = NOW()
                 WHERE status = 'PENDING_PAYMENT'

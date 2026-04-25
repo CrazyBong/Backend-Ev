@@ -203,6 +203,10 @@ class TestDemandPrediction:
                 "slot_id": str(seed_slot.id),
                 "ikey": str(uuid4()),
             })
+        await db_session.execute(text("""
+            INSERT INTO station_managers (user_id, station_id)
+            VALUES (:user_id, :station_id)
+        """), {"user_id": uid, "station_id": str(seed_slot.station_id)})
         await db_session.commit()
 
         res = await client.get(
@@ -223,7 +227,7 @@ class TestRateLimiter:
         """
         OTP endpoint allows 5 requests/minute. The 6th must return 429.
         """
-        payload = {"phone_no": "+916600000001"}
+        payload = {"phone": "+916600000001"}
         for _ in range(5):
             await client.post("/v1/auth/otp/send", json=payload)
 
@@ -239,7 +243,7 @@ class TestRateLimiter:
         for i in range(4):
             res = await client.post(
                 "/v1/auth/otp/send",
-                json={"phone_no": f"+916611{i:06d}"},
+                json={"phone": f"+916611{i:06d}"},
             )
             assert res.status_code != 429
 
