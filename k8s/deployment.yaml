@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: evchargefinder-api
+  namespace: evchargefinder
+  labels:
+    app: evchargefinder-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: evchargefinder-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: evchargefinder-api
+    spec:
+      containers:
+        - name: evchargefinder-api
+          image: evchargefinder-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: evchargefinder-config
+            - secretRef:
+                name: evchargefinder-secrets
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /docs
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /docs
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000

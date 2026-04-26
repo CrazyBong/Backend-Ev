@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_KEY: SecretStr
     DATABASE_URL: str        # PostgreSQL DSN with PostGIS
     DATABASE_URL_ASYNC: str  # Async DSN
+    DATABASE_URL_RO: str | None = None
+    DATABASE_URL_RO_ASYNC: str | None = None
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"

@@ -73,10 +73,12 @@ async def store_notification(
 ) -> None:
     """Insert a notification row that the client can poll/receive via WebSocket."""
     try:
+        import uuid as _uuid
         await db.execute(text("""
-            INSERT INTO notifications (user_id, type, title, body, data)
-            VALUES (:user_id, :type, :title, :body, :data)
+            INSERT INTO notifications (id, user_id, type, title, body, data)
+            VALUES (:id, :user_id, :type, :title, :body, :data)
         """), {
+            "id": str(_uuid.uuid4()),
             "user_id": user_id,
             "type": notif_type,
             "title": title,

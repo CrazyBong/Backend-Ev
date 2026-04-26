@@ -15,6 +15,13 @@ class ChargingNetwork(enum.Enum):
     EESL = "EESL"
     INDEPENDENT = "INDEPENDENT"
 
+from sqlalchemy import Table
+station_managers = Table(
+    'station_managers', Base.metadata,
+    Column('user_id', UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
+    Column('station_id', UUID(as_uuid=True), ForeignKey('stations.id', ondelete='CASCADE'), primary_key=True)
+)
+
 class Station(Base):
     __tablename__ = "stations"
 

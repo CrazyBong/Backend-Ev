@@ -85,7 +85,7 @@ class TestStationDetail:
         fake_id = "00000000-0000-0000-0000-000000000000"
         res = await client.get(f"/v1/stations/{fake_id}", headers=station_auth_headers)
         assert res.status_code == 404
-        assert res.json()["detail"]["code"] == "STATION_NOT_FOUND"
+        assert res.json()["error"]["code"] == "STATION_NOT_FOUND"
 
 
 class TestSlotDetail:
@@ -93,4 +93,4 @@ class TestSlotDetail:
         fake_id = "00000000-0000-0000-0000-000000000000"
         res = await client.get(f"/v1/slots/{fake_id}", headers=station_auth_headers)
         assert res.status_code == 404
-        assert res.json()["detail"]["code"] == "SLOT_NOT_FOUND"
+        assert res.json()["error"]["code"] == "SLOT_NOT_FOUND"

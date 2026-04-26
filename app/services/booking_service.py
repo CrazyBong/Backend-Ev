@@ -137,7 +137,8 @@ async def create_booking(
         
         if not lock_acquired:
             existing_lock = await redis.get(lock_key)
-            if existing_lock and existing_lock.decode("utf-8") != user_id:
+            lock_val = existing_lock.decode("utf-8") if isinstance(existing_lock, bytes) else existing_lock
+            if lock_val and lock_val != user_id:
                raise HTTPException(status_code=409, detail={"code": "SLOT_LOCKED", "message": "Slot is temporarily reserved."})
 
         # DB locking and update
@@ -179,9 +180,10 @@ async def create_booking(
         })
 
         await db.execute(text("""
-            INSERT INTO payments (booking_id, user_id, razorpay_order_id, amount)
-            VALUES (:booking_id, :user_id, :order_id, :amount)
+            INSERT INTO payments (id, booking_id, user_id, razorpay_order_id, amount, status)
+            VALUES (:id, :booking_id, :user_id, :order_id, :amount, 'CREATED')
         """), {
+            "id": str(uuid4()),
             "booking_id": booking_id,
             "user_id": user_id,
             "order_id": razorpay_order["id"],

@@ -21,6 +21,20 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
+# Read replica engine (fall back to primary if not provided)
+engine_ro = create_async_engine(
+    settings.DATABASE_URL_RO_ASYNC or settings.DATABASE_URL_ASYNC,
+    echo=settings.DEBUG,
+    future=True,
+    pool_pre_ping=True,
+)
+
+AsyncSessionLocalRO = async_sessionmaker(
+    bind=engine_ro,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
 class Base(DeclarativeBase):
     pass
 
@@ -40,6 +54,20 @@ async def get_db():
     Mutations must use `async with db.begin()` for atomicity.
     """
     async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+async def get_db_read():
+    """
+    Dependency for getting async database session directed at the read replica.
+    Use exclusively for GET endpoints to scale read query throughput.
+    """
+    async with AsyncSessionLocalRO() as session:
         try:
             yield session
         except Exception:

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
-from app.db.database import get_db
+from app.db.database import get_db, get_db_read
 from app.middleware.auth_middleware import get_current_user
 from app.schemas.review import ReviewCreateRequest, ReviewResponse
 from app.services.review_service import create_review, list_station_reviews, get_station_rating_summary
@@ -27,7 +27,7 @@ async def get_reviews(
     station_id: UUID,
     limit: int = Query(50, ge=1, le=500),
     offset: int = 0,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db_read)
 ):
     """Get summarized ratings and list of reviews for a station."""
     reviews = await list_station_reviews(db, str(station_id), limit, offset)

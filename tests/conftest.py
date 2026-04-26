@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 
 from app.config import settings
 from app.main import app
-from app.db.database import get_db, Base
+from app.db.database import get_db, get_db_read, Base
 from app.db.redis import get_redis, init_redis_pool, close_redis_pool
 from app.services.auth_service import create_access_token
 
@@ -17,6 +17,7 @@ from app.models.station import Station
 from app.models.slot import Slot
 from app.models.review import Review
 from app.models.booking import Booking
+from app.models.notification import Notification
 
 
 # ─── Database: Setup schema + Per-test engine/session for isolation ──────────
@@ -76,6 +77,7 @@ async def client(db_session):
             await db_session.rollback()
 
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_db_read] = _override_get_db
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
@@ -109,7 +111,7 @@ async def seed_user(db_session):
     user_id = uuid.uuid4()
     phone = f"+9199{random.randint(10000000, 99999999)}"
     await db_session.execute(text("""
-        INSERT INTO users (id, phone, role) VALUES (:id, :phone, 'user')
+        INSERT INTO users (id, phone, role, is_active) VALUES (:id, :phone, 'user', true)
     """), {"id": str(user_id), "phone": phone})
     await db_session.commit()
     class _U:
@@ -123,7 +125,7 @@ async def seed_station_admin(db_session):
     user_id = uuid.uuid4()
     phone = f"+9188{random.randint(10000000, 99999999)}"
     await db_session.execute(text("""
-        INSERT INTO users (id, phone, role) VALUES (:id, :phone, 'station_admin')
+        INSERT INTO users (id, phone, role, is_active) VALUES (:id, :phone, 'station_admin', true)
     """), {"id": str(user_id), "phone": phone})
     await db_session.commit()
     class _U:
@@ -137,8 +139,8 @@ async def seed_slot(db_session, seed_station_admin):
     station_id = uuid.uuid4()
     import json
     await db_session.execute(text("""
-        INSERT INTO stations (id, name, network, location, address, operating_hours, admin_user_id, price_per_unit, is_active, total_slots)
-        VALUES (:id, 'Test Station', 'TATA_POWER', ST_GeomFromText('POINT(77.4126 23.2599)', 4326), :address, :hours, :admin_id, 15.0, true, 10)
+        INSERT INTO stations (id, name, network, location, address, operating_hours, admin_user_id, price_per_unit, is_active, total_slots, available_slots)
+        VALUES (:id, 'Test Station', 'TATA_POWER', ST_GeomFromText('POINT(77.4126 23.2599)', 4326), :address, :hours, :admin_id, 15.0, true, 10, 10)
     """), {
         "id": str(station_id),
         "address": json.dumps({"street": "123 Main St"}),
