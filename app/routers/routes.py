@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db
@@ -5,6 +6,7 @@ from app.db.redis import get_redis
 from app.schemas.route import RoutePlanRequest, RoutePlanResponse
 from app.services.route_service import plan_ev_route, RouteNotFoundError
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/plan", response_model=RoutePlanResponse)
@@ -32,6 +34,5 @@ async def plan_route(
     except RouteNotFoundError as e:
         raise HTTPException(status_code=404, detail={"code": "ROUTE_NOT_FOUND", "message": str(e)})
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Route planning failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail={"code": "ROUTE_ERROR", "message": "Failed to plan route"})

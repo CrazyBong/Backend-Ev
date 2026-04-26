@@ -16,7 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.database import get_db
+from app.db.database import get_db, get_db_read
 from app.middleware.auth_middleware import get_current_user, require_admin
 from app.services.station_service import (
     get_nearby_stations, get_station_detail, get_station_slots,
@@ -39,7 +39,7 @@ async def nearby_stations(
     available_only: bool = Query(False, description="Only show stations with available slots"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_read),
     _: dict = Depends(get_current_user),
 ):
     stations = await get_nearby_stations(
@@ -61,7 +61,7 @@ async def nearby_stations(
 @router.get("/{station_id}", response_model=dict)
 async def station_detail(
     station_id: UUID,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_read),
     _: dict = Depends(get_current_user),
 ):
     station = await get_station_detail(station_id, db)

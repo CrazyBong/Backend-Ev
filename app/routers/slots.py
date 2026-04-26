@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.database import get_db
+from app.db.database import get_db, get_db_read
 from app.middleware.auth_middleware import get_current_user
 from app.services.station_service import get_station_slots
 
@@ -21,7 +21,7 @@ router = APIRouter()
 @router.get("/stations/{station_id}", response_model=dict)
 async def list_station_slots(
     station_id: UUID,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_read),
     _: dict = Depends(get_current_user),
 ):
     slots = await get_station_slots(station_id, db)
@@ -31,7 +31,7 @@ async def list_station_slots(
 @router.get("/{slot_id}", response_model=dict)
 async def get_slot_detail(
     slot_id: UUID,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_read),
     _: dict = Depends(get_current_user),
 ):
     result = await db.execute(

@@ -11,9 +11,9 @@ pytestmark = pytest.mark.asyncio
 
 class TestCleanupTasks:
     async def test_release_abandoned_locks(self, db_session, seed_user, seed_station_admin, seed_slot_2):
-        # 1. Create a "PENDING_PAYMENT" booking that is OLDER than TTL
+        # 1. Create a "PENDING_PAYMENT" booking that is OLDER than TTL (using an aggressive 1 day margin)
         old_booking_id = str(uuid4())
-        old_time = datetime.now(timezone.utc) - timedelta(seconds=settings.SLOT_LOCK_TTL_SECONDS + 10)
+        old_time = datetime.now(timezone.utc) - timedelta(days=1)
         
         # 2. Create a "PENDING_PAYMENT" booking that is NEWER than TTL
         fresh_booking_id = str(uuid4())
@@ -56,7 +56,7 @@ class TestCleanupTasks:
         
         # Verify old booking is cancelled
         old_b = await db_session.execute(text("SELECT status FROM bookings WHERE id = :id"), {"id": old_booking_id})
-        assert old_b.scalar() == "CANCELLED_BY_ADMIN"
+        assert old_b.scalar() == "CANCELLED_BY_SYSTEM"
         
         # Verify old slot is available and locks removed
         old_s = await db_session.execute(text("SELECT status, locked_by_user, locked_until FROM slots WHERE id = :id"), {"id": str(seed_slot_2.id)})

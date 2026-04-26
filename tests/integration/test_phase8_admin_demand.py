@@ -33,7 +33,7 @@ async def _seed_booking(db_session, user_id, station_id, slot_id, status="CONFIR
     """Helper to insert a booking with all required fields."""
     return await db_session.execute(text("""
         INSERT INTO bookings (id, user_id, station_id, slot_id, status, scheduled_start, scheduled_end, amount, idempotency_key)
-        VALUES (:id, :user_id, :station_id, :slot_id, CAST(:status AS booking_status),
+        VALUES (:id, :user_id, :station_id, :slot_id, :status,
                 NOW(), NOW() + INTERVAL '1 hour', 0.0, :ikey)
     """), {
         "id": str(uuid4()),
@@ -49,7 +49,7 @@ async def _seed_user(db_session, prefix="7700") -> str:
     uid = str(uuid4())
     phone = f"+91{prefix}{uuid4().hex[:6]}"
     await db_session.execute(text(
-        "INSERT INTO users (id, phone, role) VALUES (:id, :phone, 'user')"
+        "INSERT INTO users (id, phone, role, is_active) VALUES (:id, :phone, 'user', true)"
     ), {"id": uid, "phone": phone})
     return uid
 
@@ -65,7 +65,7 @@ class TestAdminAPI:
             json={"status": "OFFLINE"}
         )
         assert res.status_code == 403
-        assert res.json()["detail"]["error"]["code"] == "FORBIDDEN"
+        assert res.json()["error"]["code"] == "FORBIDDEN"
 
     async def test_admin_can_update_slot_to_offline(self, client, seed_station_admin, seed_slot):
         """Station admin can update slot status to OFFLINE."""
@@ -193,7 +193,7 @@ class TestDemandPrediction:
             await db_session.execute(text("""
                 INSERT INTO bookings (id, user_id, station_id, slot_id, status, scheduled_start, scheduled_end, amount, idempotency_key, created_at)
                 VALUES (:id, :uid, :station_id, :slot_id,
-                        CAST('COMPLETED' AS booking_status),
+                        'COMPLETED',
                         NOW(), NOW() + INTERVAL '1 hour', 0.0, :ikey,
                         NOW() - INTERVAL '5 hours')
             """), {

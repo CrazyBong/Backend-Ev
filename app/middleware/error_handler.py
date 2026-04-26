@@ -6,6 +6,7 @@ import logging
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
@@ -105,28 +106,38 @@ def register_error_handlers(app: FastAPI):
             }
         )
 
-    @app.exception_handler(404)
-    async def not_found_handler(request: Request, exc):
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content={
-                "success": False,
-                "error": {
-                    "code": "NOT_FOUND",
-                    "message": f"Resource not found: {request.url.path}",
-                }
-            }
-        )
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        # If detail is already a full error_response envelope, return it directly
+        if isinstance(exc.detail, dict) and "success" in exc.detail and "error" in exc.detail:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content=exc.detail,
+            )
 
-    @app.exception_handler(401)
-    async def unauthorized_handler(request: Request, exc):
+        # Fix: Better fallback for detail as dictionary lacking a message
+        if isinstance(exc.detail, dict):
+            code = exc.detail.get("code", "HTTP_ERROR")
+            message = exc.detail.get("message", "An expected error occurred.")
+        else:
+            code = "HTTP_ERROR"
+            message = str(exc.detail)
+            
+        # Provide meaningful defaults for standard HTTP errors if no custom code was provided
+        if exc.status_code == 404 and code == "HTTP_ERROR":
+            code = "NOT_FOUND"
+            message = f"Resource not found: {request.url.path}"
+        elif exc.status_code == 401 and code == "HTTP_ERROR":
+            code = "UNAUTHORIZED"
+            message = "Authentication required."
+            
         return JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=exc.status_code,
             content={
                 "success": False,
                 "error": {
-                    "code": "UNAUTHORIZED",
-                    "message": "Authentication required.",
+                    "code": code,
+                    "message": message,
                 }
             }
         )

@@ -4,3 +4,4 @@ from app.models.slot import Slot
 from app.models.booking import Booking
 from app.models.payment import Payment
 from app.models.review import Review
+from app.models.notification import Notification

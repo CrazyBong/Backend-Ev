@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: evchargefinder-api
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql+asyncpg://evuser:evpass@db:5432/evdb
+      - REDIS_URL=redis://redis:6379/0
+      # Reference keys from `.env` in production, mapped here for local testing override
+      - SECRET_KEY=${SECRET_KEY:-default_insecure_secret_key_for_local_testing_only}
+      - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY}
+      - JWT_PUBLIC_KEY=${JWT_PUBLIC_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ev_network
+    restart: unless-stopped
+
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: evchargefinder-db
+    environment:
+      POSTGRES_USER: evuser
+      POSTGRES_PASSWORD: evpass
+      POSTGRES_DB: evdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - ev_pgdata:/var/lib/postgresql/data
+    networks:
+      - ev_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U evuser -d evdb" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: evchargefinder-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ev_redisdata:/data
+    command: redis-server --appendonly yes
+    networks:
+      - ev_network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  ev_pgdata:
+  ev_redisdata:
+
+networks:
+  ev_network:
+    driver: bridge

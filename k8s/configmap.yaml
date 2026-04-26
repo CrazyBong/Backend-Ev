@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: evchargefinder-config
+  namespace: evchargefinder
+data:
+  ENVIRONMENT: "development"
+  # Replace with actual DB details in production
+  DATABASE_URL_RO: "postgresql+asyncpg://evuser:evpass@db-replica:5432/evdb"
