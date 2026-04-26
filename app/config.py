@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import SecretStr
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 class Settings(BaseSettings):
     # App
@@ -47,6 +47,14 @@ class Settings(BaseSettings):
 
     # Slot Locking
     SLOT_LOCK_TTL_SECONDS: int = 120   # 2 minutes
+
+    # Telemetry (Phase 10)
+    # Sentry DSN — leave blank to disable APM
+    SENTRY_DSN: Optional[str] = None
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.1   # 10% of transactions profiled
+
+    # IoT Simulation
+    IOT_API_KEY: SecretStr
 
     model_config = SettingsConfigDict(
         env_file=".env",

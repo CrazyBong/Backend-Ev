@@ -33,7 +33,7 @@ async def release_abandoned_locks(db: AsyncSession):
             RETURNING s.id, eb.id as booking_id;
         """)
         result = await db.execute(query)
-        released = result.fetchall()
+        released = result.all()
         await db.commit()
         
         if released:

@@ -1,8 +1,9 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import text
+from sqlalchemy import text, event
 from app.config import settings
 import logging
+from prometheus_client import Gauge
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,33 @@ AsyncSessionLocalRO = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+# --- Prometheus DB-pool health gauges ---------------------------------------
+
+_DB_POOL_SIZE = Gauge("db_pool_size", "SQLAlchemy connection pool size", ["pool"])
+_DB_POOL_CHECKED_OUT = Gauge("db_pool_checked_out", "Active DB connections checked out from the pool", ["pool"])
+_DB_POOL_OVERFLOW = Gauge("db_pool_overflow", "Number of connections opened beyond pool_size", ["pool"])
+
+
+def _register_pool_events(eng, pool_name: str) -> None:
+    """Attach SQLAlchemy pool events to refresh Prometheus gauges on checkout/checkin."""
+    @event.listens_for(eng.sync_engine, "checkout")
+    def on_checkout(dbapi_conn, conn_record, conn_proxy):
+        pool = eng.sync_engine.pool
+        _DB_POOL_SIZE.labels(pool=pool_name).set(pool.size())
+        _DB_POOL_CHECKED_OUT.labels(pool=pool_name).set(pool.checkedout())
+        _DB_POOL_OVERFLOW.labels(pool=pool_name).set(pool.overflow())
+
+    @event.listens_for(eng.sync_engine, "checkin")
+    def on_checkin(dbapi_conn, conn_record):
+        pool = eng.sync_engine.pool
+        _DB_POOL_SIZE.labels(pool=pool_name).set(pool.size())
+        _DB_POOL_CHECKED_OUT.labels(pool=pool_name).set(pool.checkedout())
+        _DB_POOL_OVERFLOW.labels(pool=pool_name).set(pool.overflow())
+
+
+_register_pool_events(engine, "primary")
+_register_pool_events(engine_ro, "replica")
 
 class Base(DeclarativeBase):
     pass

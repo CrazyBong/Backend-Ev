@@ -4,20 +4,26 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+from app.utils.logging import set_correlation_id
+
+
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Prefer existing X-Request-ID if provided by proxy/client, else generate
         correlation_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-        
+
         # Attach to request state for access in routers/services
         request.state.correlation_id = correlation_id
-        
+
+        # Propagate into ContextVar so JsonFormatter picks it up on every log line
+        set_correlation_id(correlation_id)
+
         start_time = time.time()
-        response = await call_next(request)
+        response: Response = await call_next(request)
         process_time = time.time() - start_time
-        
+
         # Inject into response headers
         response.headers["X-Request-ID"] = correlation_id
-        response.headers["X-Process-Time"] = str(process_time)
-        
+        response.headers["X-Process-Time"] = str(round(process_time * 1000, 2)) + "ms"
+
         return response

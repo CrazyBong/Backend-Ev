@@ -71,10 +71,9 @@ async def clean_redis():
 async def client(db_session):
     """Client with DB dependency overridden to use the per-test session."""
     async def _override_get_db():
-        try:
-            yield db_session
-        finally:
-            await db_session.rollback()
+        # Do not use a try/finally rollback here because the db_session fixture 
+        # already handles the rollback, and FastAPI dependency teardown may execute concurrently with it.
+        yield db_session
 
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_db_read] = _override_get_db
@@ -98,6 +97,7 @@ async def auth_headers():
     class _FakeUser:
         id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
         role = "user"
+    return await get_auth_headers(_FakeUser())
         
 async def get_auth_headers(user):
     from app.services.auth_service import create_access_token
