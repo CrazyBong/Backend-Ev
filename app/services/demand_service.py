@@ -1,23 +1,24 @@
 """
 AI-based Demand Prediction Service.
-Uses a weighted moving average over historical booking data (per hour-of-day)
-to predict slot demand for the next 24 hours for a given station.
+
+Phase 11 upgrade: tries RandomForest first; falls back to WMA if model
+hasn't been trained yet (cold start) or model file is missing.
 """
+from __future__ import annotations
+
 import logging
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-WEIGHTS = [0.5, 0.3, 0.2]  # Most recent day gets highest weight
+WEIGHTS = [0.5, 0.3, 0.2]  # WMA: most recent day gets highest weight
 
 
-async def predict_demand(db, station_id: str) -> list[dict]:
-    """
-    Returns a 24-element list, one entry per hour (0-23), with:
-      - hour: int
-      - predicted_bookings: float (weighted avg across last 3 days)
-      - load_percent: float (0-100, relative to peak hour)
-    """
+# ── WMA Implementation (unchanged, Day-0 production algorithm) ─────────────
+
+async def _wma_predict(db: AsyncSession, station_id: str) -> list[dict]:
+    """Weighted Moving Average over last 3 days of booking history."""
     result = await db.execute(text("""
         SELECT
             EXTRACT(HOUR FROM created_at AT TIME ZONE 'Asia/Kolkata') AS hour,
@@ -33,7 +34,6 @@ async def predict_demand(db, station_id: str) -> list[dict]:
 
     rows = result.mappings().all()
 
-    # Organise data: { day_offset_0_1_2: { hour: count } }
     days_data: list[dict] = [{} for _ in range(3)]
     unique_days = sorted(set(str(r["day"]) for r in rows), reverse=True)[:3]
     day_index = {d: i for i, d in enumerate(unique_days)}
@@ -44,7 +44,6 @@ async def predict_demand(db, station_id: str) -> list[dict]:
             idx = day_index[day_key]
             days_data[idx][int(row["hour"])] = int(row["booking_count"])
 
-    # Compute weighted averages
     predictions = []
     for hour in range(24):
         weighted_sum = 0.0
@@ -57,12 +56,47 @@ async def predict_demand(db, station_id: str) -> list[dict]:
         predicted = weighted_sum / total_weight if total_weight > 0 else 0.0
         predictions.append({"hour": hour, "predicted_bookings": round(predicted, 2)})
 
-    # Calculate load_percent (relative to peak)
-    peak = max((p["predicted_bookings"] for p in predictions), default=1.0) or 1.0
+    peak = max((p["predicted_bookings"] for p in predictions), default=1.0)
+    if peak <= 0:
+        peak = 1.0
     for p in predictions:
         p["load_percent"] = round((p["predicted_bookings"] / peak) * 100, 1)
 
     return predictions
+
+
+# ── Unified predict_demand (RF → WMA fallback) ─────────────────────────────
+
+async def predict_demand(
+    db: AsyncSession,
+    station_id: str,
+) -> tuple[list[dict], str]:
+    """
+    Returns (24-element list, model_type_str).
+
+    model_type_str is 'random_forest' or 'weighted_average'
+    so the API response can tell clients which engine ran.
+    """
+    from app.ml.model import DemandForecaster  # lazy, avoids import at module load
+
+    forecaster = DemandForecaster(station_id)
+    if forecaster.load():
+        try:
+            predictions = forecaster.predict_24h()
+            # load_percent not computed by RF — compute it now
+            peak = max((p["predicted_bookings"] for p in predictions), default=1.0)
+            if peak <= 0:
+                peak = 1.0
+            for p in predictions:
+                p["load_percent"] = round((p["predicted_bookings"] / peak) * 100, 1)
+            logger.info("RF prediction used", extra={"station_id": station_id})
+            return predictions, "random_forest"
+        except Exception as exc:
+            logger.warning("RF predict failed, falling back to WMA",
+                           extra={"station_id": station_id, "error": str(exc)})
+
+    predictions = await _wma_predict(db, station_id)
+    return predictions, "weighted_average"
 
 
 async def get_busiest_hours(predictions: list[dict], top_n: int = 3) -> list[int]:

@@ -12,40 +12,52 @@ def mock_razorpay():
 
 class TestBookingConcurrency:
     async def test_concurrent_booking_same_slot_one_wins(
-        self, client, seed_user, seed_station_admin, seed_slot
+        self, seed_slot, seed_user, seed_station_admin
     ):
-        """
-        Two concurrent requests for the exact same slot in the exact same time window.
-        Exactly one should get 200/201 (since we return {"data": ...}), the other should get a 409 Conflict.
-        """
-        # Get Auth headers for two different users
+        from app.db.database import get_db, get_db_read
+        from app.config import settings
+        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+        from httpx import AsyncClient, ASGITransport
+        from app.main import app
         from tests.conftest import get_auth_headers
-        auth_1 = await get_auth_headers(seed_user)
-        auth_2 = await get_auth_headers(seed_station_admin)
 
-        slot_id = seed_slot.id
+        concurrent_engine = create_async_engine(settings.DATABASE_URL_ASYNC, pool_size=3, max_overflow=5)
+        ConcurrentSession = async_sessionmaker(bind=concurrent_engine, class_=AsyncSession, expire_on_commit=False)
 
-        payload1 = {
-            "slot_id": str(slot_id),
-            "scheduled_start": "2026-06-01T14:00:00Z",
-            "scheduled_end":   "2026-06-01T14:45:00Z",
-        }
+        async def _concurrent_get_db():
+            async with ConcurrentSession() as session:
+                yield session
+
+        app.dependency_overrides[get_db] = _concurrent_get_db
+        app.dependency_overrides[get_db_read] = _concurrent_get_db
+
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as concurrent_client:
+                auth_1 = await get_auth_headers(seed_user)
+                auth_2 = await get_auth_headers(seed_station_admin)
+                
+                payload1 = {
+                    "slot_id": str(seed_slot.id),
+                    "scheduled_start": "2026-06-01T14:00:00Z",
+                    "scheduled_end":   "2026-06-01T14:45:00Z",
+                }
+                payload2 = {
+                    "slot_id": str(seed_slot.id),
+                    "scheduled_start": "2026-06-01T14:15:00Z",
+                    "scheduled_end":   "2026-06-01T15:00:00Z",
+                }
         
-        payload2 = {
-            "slot_id": str(slot_id),
-            "scheduled_start": "2026-06-01T14:00:00Z",
-            "scheduled_end":   "2026-06-01T14:45:00Z",
-        }
-
-        # Fire both requests simultaneously
-        res1, res2 = await asyncio.gather(
-            client.post("/v1/bookings", json=payload1, headers={**auth_1, "Idempotency-Key": str(uuid4())}),
-            client.post("/v1/bookings", json=payload2, headers={**auth_2, "Idempotency-Key": str(uuid4())}),
-        )
+                res1, res2 = await asyncio.gather(
+                    concurrent_client.post("/v1/bookings", headers={**auth_1, "Idempotency-Key": str(uuid4())}, json=payload1),
+                    concurrent_client.post("/v1/bookings", headers={**auth_2, "Idempotency-Key": str(uuid4())}, json=payload2)
+                )
+        finally:
+            app.dependency_overrides.clear()
+            await concurrent_engine.dispose()
 
         statuses = {res1.status_code, res2.status_code}
         assert 200 in statuses, f"At least one booking must succeed. Got {res1.status_code}, {res2.status_code}. Bodies: {res1.json()}, {res2.json()}"
-        assert 409 in statuses, "At least one booking must fail due to lock."
+        assert 409 in statuses, f"At least one booking must fail due to lock. Got statuses: {statuses}"
         
     async def test_idempotency_key_prevents_duplicate_booking(self, client, seed_user, seed_slot_2):
         from tests.conftest import get_auth_headers

@@ -80,6 +80,6 @@ async def mark_all_notifications_read(
         RETURNING id
     """), {"user_id": user["sub"]})
 
-    updated_count = len(result.fetchall())
+    updated_count = len(result.all())
     await db.commit()
     return {"data": {"marked_read": updated_count}}
