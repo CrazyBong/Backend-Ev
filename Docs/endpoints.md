@@ -1,220 +1,188 @@
-# ⚡ EVChargeFinder Frontend API Map
+# Backend Endpoint Map
 
-This document outlines the core endpoints needed for the React Native App connection. Admin and IoT physical device webhooks have been excluded for clarity.
+> Last updated: `2026-05-07`  
+> Backend repo: `C:\Users\Lenovo\Backend-Ev`  
+> Frontend repo reviewed: `C:\Users\Lenovo\Kairo-React-Native`
 
----
+## Summary
 
-## 📦 Domain: auth
+The backend already exposes the core APIs the current React Native app uses for:
 
-### `POST /v1/auth/otp/send`
-> **Request Otp**
+- auth
+- profile bootstrap and update
+- nearby station discovery
+- station detail
+- slot listing
+- bookings
+- payment verification and Razorpay webhook reconciliation
+- route planning
+- notifications
+- demand/pricing read paths
+- station reviews read path
 
----
+The biggest remaining backend product gap is still:
 
-### `POST /v1/auth/otp/verify`
-> **Confirm Otp**
+- real station inventory data in the `stations` table
 
----
+The main remaining end-to-end gaps are shared with the frontend:
 
-### `POST /v1/auth/token/refresh`
-> **Refresh Access Token**
+- discovery and route planning still need live GPS as the real origin
+- frontend still needs real WebSocket slot sync
+- frontend still needs the final live payment SDK flow
 
----
+## Base API
 
-### `DELETE /v1/auth/logout`
-> **Logout**
+- Local dev base URL: `http://127.0.0.1:8000/v1`
+- Docs UI: `http://127.0.0.1:8000/docs`
+- Protected routes use Bearer JWT auth
+- OTP auth is development-friendly and can expose `dev_otp` in non-production workflows
 
-- 🔐 **Auth Required**: Bearer Token (JWT)
+## Core App Endpoints
 
----
+### Auth
 
-### `GET /v1/auth/me`
-> **Get Me**
+| Method | Endpoint | Used by frontend | Status |
+|---|---|---|---|
+| `POST` | `/v1/auth/otp/send` | Yes | Live |
+| `POST` | `/v1/auth/otp/verify` | Yes | Live |
+| `POST` | `/v1/auth/token/refresh` | Yes | Live |
+| `GET` | `/v1/auth/me` | Yes | Live |
+| `PATCH` | `/v1/auth/me` | Yes | Live |
+| `DELETE` | `/v1/auth/logout` | Yes | Live |
 
-- 🔐 **Auth Required**: Bearer Token (JWT)
+Notes:
 
----
+- current user bootstrap is part of the active frontend session flow
+- refresh flow is already consumed by the frontend Axios interceptor
 
-## 📦 Domain: bookings
+### Stations
 
-### `POST /v1/bookings`
-> **Request Booking**
+| Method | Endpoint | Used by frontend | Status |
+|---|---|---|---|
+| `GET` | `/v1/stations/nearby` | Yes | Live |
+| `GET` | `/v1/stations/{station_id}` | Yes | Live |
 
-**Query Parameters:**
+Notes:
 
-- 🔐 **Auth Required**: Bearer Token (JWT)
+- APIs are integrated, but the backend database still has no real station inventory loaded
+- once stations are seeded with real lat/lng, map rendering and list discovery can use them immediately
 
----
+### Slots
 
-### `GET /v1/bookings`
-> **List User Bookings**
+| Method | Endpoint | Used by frontend | Status |
+|---|---|---|---|
+| `GET` | `/v1/slots/stations/{station_id}` | Yes | Live |
+| `GET` | `/v1/slots/{slot_id}` | Not used in current mobile UI | Backend only |
 
-- 🔐 **Auth Required**: Bearer Token (JWT)
+Notes:
 
----
+- slot fetch is already wired
+- live slot updates exist server-side, but the frontend still uses mock/polling behavior
 
-### `DELETE /v1/bookings/{booking_id}`
-> **Cancel Booking**
+### Bookings
 
-**Query Parameters:**
+| Method | Endpoint | Used by frontend | Status |
+|---|---|---|---|
+| `POST` | `/v1/bookings` | Yes | Live |
+| `GET` | `/v1/bookings` | Yes | Live |
+| `DELETE` | `/v1/bookings/{booking_id}` | Yes | Live |
 
-- 🔐 **Auth Required**: Bearer Token (JWT)
+### Payments
 
----
+| Method | Endpoint | Used by frontend | Status |
+|---|---|---|---|
+| `POST` | `/v1/payments/verify` | Yes | Live |
+| `POST` | `/v1/payments/webhook` | Backend-only Razorpay callback | Live |
 
-## 📦 Domain: demand
+Notes:
 
-### `GET /v1/demand/predict/{station_id}`
-> **24-hour demand forecast (ML or WMA)**
+- backend-side reconciliation is in place
+- webhook confirmation flow is covered by integration tests
+- the mobile client should not own financial rollback logic
 
-**Query Parameters:**
+### Routes
 
-- 🔐 **Auth Required**: Bearer Token (JWT)
+| Method | Endpoint | Used by frontend | Status |
+|---|---|---|---|
+| `POST` | `/v1/routes/plan` | Yes | Live |
 
----
+Notes:
 
-### `GET /v1/demand/pricing/{station_id}`
-> **Current surge pricing for a station**
+- route planning is backend-powered
+- frontend still needs live device GPS for the true origin instead of demo coordinates
 
-**Query Parameters:**
+### Notifications
 
-- 🔐 **Auth Required**: Bearer Token (JWT)
+| Method | Endpoint | Used by frontend | Status |
+|---|---|---|---|
+| `GET` | `/v1/notifications` | Yes | Live |
+| `POST` | `/v1/notifications/{notification_id}/read` | Yes | Live |
+| `POST` | `/v1/notifications/read-all` | Yes | Live |
 
----
+### Demand
 
-### `POST /v1/demand/train/{station_id}`
-> **Trigger RF model training for a station (admin only)**
+| Method | Endpoint | Used by frontend | Status |
+|---|---|---|---|
+| `GET` | `/v1/demand/predict/{station_id}` | Yes | Live |
+| `GET` | `/v1/demand/pricing/{station_id}` | Yes | Live |
+| `POST` | `/v1/demand/train/{station_id}` | No | Admin/backend only |
 
-**Query Parameters:**
+### Reviews
 
-- 🔐 **Auth Required**: Bearer Token (JWT)
+| Method | Endpoint | Used by frontend | Status |
+|---|---|---|---|
+| `GET` | `/v1/reviews/stations/{station_id}` | Yes | Live |
+| `POST` | `/v1/reviews` | No submission UI yet | Backend exists |
 
----
+## Backend-Only / Not Yet Consumed Fully
 
-## 📦 Domain: notifications
+### Admin
 
-### `GET /v1/notifications`
-> **List Notifications**
+| Method | Endpoint | Status |
+|---|---|---|
+| `PATCH` | `/v1/admin/stations/{station_id}/slots/{slot_id}` | Backend only |
+| `GET` | `/v1/admin/stations/{station_id}/bookings` | Backend only |
 
-- 🔐 **Auth Required**: Bearer Token (JWT)
+### IoT / Realtime / Ops
 
----
+| Method | Endpoint | Status |
+|---|---|---|
+| `POST` | `/v1/iot/heartbeat` | Backend only |
+| `GET` | `/metrics` | Backend only |
+| WebSocket | `app/routers/ws.py` and `app/routers/websockets.py` | Server exists, frontend not fully wired |
 
-### `POST /v1/notifications/{notification_id}/read`
-> **Mark Notification Read**
+## Current Reality Check
 
-**Query Parameters:**
+### Integrated and working with the app
 
-- 🔐 **Auth Required**: Bearer Token (JWT)
+- OTP send / verify / refresh
+- current user bootstrap
+- profile update
+- bookings create / list / cancel
+- payment verification
+- notification list / mark-read / mark-all-read
+- route planning
+- station detail and nearby station APIs
+- slot list fetch
+- demand and pricing reads
+- station review reads
 
----
+### Still incomplete from a full product-launch perspective
 
-### `POST /v1/notifications/read-all`
-> **Mark All Notifications Read**
+- real station inventory data
+- live GPS-based origin from the frontend
+- real frontend WebSocket slot sync
+- final live payment SDK flow on the mobile client
+- review submission UI
+- wallet / balance endpoints
+- richer profile summary endpoints
 
-- 🔐 **Auth Required**: Bearer Token (JWT)
+## Recommended Next Update Trigger
 
----
+Update this file again when any of the following land:
 
-## 📦 Domain: payments
-
-### `POST /v1/payments/verify`
-> **Verify Payment**
-
-- 🔐 **Auth Required**: Bearer Token (JWT)
-
----
-
-### `POST /v1/payments/webhook`
-> **Razorpay Webhook**
-
----
-
-## 📦 Domain: reviews
-
-### `POST /v1/reviews`
-> **Post Review**
-
-- 🔐 **Auth Required**: Bearer Token (JWT)
-
----
-
-### `GET /v1/reviews/stations/{station_id}`
-> **Get Reviews**
-
-**Query Parameters:**
-- `limit` (Optional)
-- `offset` (Optional)
-
----
-
-## 📦 Domain: routes
-
-### `POST /v1/routes/plan`
-> **Plan Route**
-
----
-
-## 📦 Domain: slots
-
-### `GET /v1/slots/stations/{station_id}`
-> **List Station Slots**
-
-**Query Parameters:**
-
-- 🔐 **Auth Required**: Bearer Token (JWT)
-
----
-
-### `GET /v1/slots/{slot_id}`
-> **Get Slot Detail**
-
-**Query Parameters:**
-
-- 🔐 **Auth Required**: Bearer Token (JWT)
-
----
-
-## 📦 Domain: stations
-
-### `GET /v1/stations/nearby`
-> **Nearby Stations**
-
-**Query Parameters:**
-- `lat` (Required)
-- `lng` (Required)
-- `radius_km` (Optional)
-- `charger_type` (Optional)
-- `available_only` (Optional)
-- `limit` (Optional)
-- `offset` (Optional)
-
-- 🔐 **Auth Required**: Bearer Token (JWT)
-
----
-
-### `GET /v1/stations/{station_id}`
-> **Station Detail**
-
-**Query Parameters:**
-
-- 🔐 **Auth Required**: Bearer Token (JWT)
-
----
-
-### `PATCH /v1/stations/{station_id}`
-> **Update Station**
-
-**Query Parameters:**
-
-- 🔐 **Auth Required**: Bearer Token (JWT)
-
----
-
-### `POST /v1/stations`
-> **Create Station**
-
-- 🔐 **Auth Required**: Bearer Token (JWT)
-
----
-
+- station import or seeding pipeline
+- live GPS origin rollout
+- real frontend websocket subscription to slot updates
+- wallet/profile-summary backend endpoints
+- real mobile payment SDK integration
