@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy.exc import IntegrityError
 import jwt
 import time
 import uuid
 
 from app.db.database import get_db
-from app.schemas.auth import SendOTPRequest, SendOTPResponse, VerifyOTPRequest, TokenPayload, RefreshTokenRequest
+from app.models.user import User
+from app.schemas.auth import SendOTPRequest, SendOTPResponse, VerifyOTPRequest, TokenPayload, RefreshTokenRequest, UserUpdate
 from app.services.auth_service import (
     send_otp, verify_otp, blacklist_token, create_access_token, create_refresh_token, user_to_dict,
     OTPRateLimitError, OTPMaxAttemptsError, InvalidOTPError
@@ -42,9 +45,6 @@ async def refresh_access_token(payload: RefreshTokenRequest, db: AsyncSession = 
         user_id = decoded.get("sub")
         parsed_uuid = uuid.UUID(user_id)
         
-        from sqlalchemy.future import select
-        from app.models.user import User
-        
         result = await db.execute(select(User).where(User.id == parsed_uuid))
         user = result.scalars().first()
         
@@ -78,5 +78,58 @@ async def logout(current_user: dict = Depends(get_current_user)):
     return {"message": "Logged out successfully"}
 
 @router.get("/me")
-async def get_me(current_user: dict = Depends(get_current_user)):
-    return {"data": current_user}
+async def get_me(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = current_user.get("sub")
+    parsed_uuid = uuid.UUID(user_id)
+    result = await db.execute(select(User).where(User.id == parsed_uuid))
+    user = result.scalars().first()
+
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "UNAUTHORIZED", "message": "User inactive or not found"},
+        )
+
+    return {"data": user_to_dict(user)}
+
+
+@router.patch("/me")
+async def update_me(
+    payload: UserUpdate,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = current_user.get("sub")
+    parsed_uuid = uuid.UUID(user_id)
+    result = await db.execute(select(User).where(User.id == parsed_uuid))
+    user = result.scalars().first()
+
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "UNAUTHORIZED", "message": "User inactive or not found"},
+        )
+
+    updates = payload.model_dump(exclude_unset=True)
+    for field, value in updates.items():
+        normalized_value = value.strip() if isinstance(value, str) else value
+        if field == "email":
+            normalized_value = normalized_value.lower() if normalized_value else None
+        if normalized_value == "":
+            normalized_value = None
+        setattr(user, field, normalized_value)
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "PROFILE_CONFLICT", "message": "Email is already in use."},
+        )
+
+    await db.refresh(user)
+    return {"data": user_to_dict(user)}

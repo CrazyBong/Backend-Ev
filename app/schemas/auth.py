@@ -29,6 +29,7 @@ class SendOTPResponse(BaseModel):
     message: str
     expires_in_seconds: int
     phone: str
+    dev_otp: Optional[str] = None
 
 class VerifyOTPRequest(BaseModel):
     phone: str = Field(..., description="Phone number associated with the OTP")

@@ -1,9 +1,11 @@
 import secrets
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 import jwt
 from passlib.context import CryptContext
 from sqlalchemy.future import select
+from sqlalchemy import text
 
 from app.config import settings
 from app.db.redis import get_redis
@@ -83,7 +85,7 @@ async def send_otp(phone: str) -> dict:
     }
     
     if settings.ENVIRONMENT == "development":
-        response_data["_dev_otp"] = otp
+        response_data["dev_otp"] = otp
         
     return response_data
 
@@ -94,7 +96,12 @@ async def verify_otp(phone: str, otp: str, session) -> dict:
     # Check attempts
     attempts_key = OTP_ATTEMPTS.format(phone=phone)
     raw_attempts = await redis.get(attempts_key)
-    attempts = int(raw_attempts.decode("utf-8") if raw_attempts else 0)
+    if isinstance(raw_attempts, bytes):
+        attempts = int(raw_attempts.decode("utf-8"))
+    elif raw_attempts:
+        attempts = int(raw_attempts)
+    else:
+        attempts = 0
     if attempts >= settings.OTP_MAX_ATTEMPTS:
         raise OTPMaxAttemptsError()
 
@@ -148,44 +155,19 @@ async def upsert_user(phone: str, session):
     Atomic upsert using PostgreSQL ON CONFLICT to prevent race conditions.
     Returns (user, is_new).
     """
-    # Insert or do nothing (effectively a select-or-insert)
-    # We return the id to check if it was inserted or just selected.
-    # Note: xmax is a system column that is 0 for newly inserted rows and non-zero for updated rows.
-    # For a DO NOTHING conflict, xmax stays 0? Actually, better to check rows affected or just fetch.
-    
-    # Standard FAANG practice: INSERT ... ON CONFLICT DO UPDATE to ensure we get the row back
-    # and know if it was a new insertion.
-    sql = text("""
-        INSERT INTO users (phone, created_at, updated_at)
-        VALUES (:phone, NOW(), NOW())
-        ON CONFLICT (phone) DO UPDATE 
-        SET updated_at = EXCLUDED.updated_at
-        RETURNING id, (xmin::text = (txid_current() % (2^32)::bigint)::text) as is_new
-    """)
-    # Note: xmin comparison is an advanced pg trick to detect if the row was just inserted in this tx.
-    # Simpler: just fetch the user and check created_at vs updated_at or similar.
-    # Let's use a simpler approach for maintainability but keep it atomic.
-    
+    generated_user_id = uuid.uuid4()
     result = await session.execute(text("""
-        INSERT INTO users (phone, role, is_active, created_at, updated_at)
-        VALUES (:phone, 'user', True, NOW(), NOW())
+        INSERT INTO users (id, phone, role, is_active, created_at, updated_at)
+        VALUES (:id, :phone, 'user', True, NOW(), NOW())
         ON CONFLICT (phone) DO UPDATE SET updated_at = users.updated_at
         RETURNING id, created_at, updated_at
-    """), {"phone": phone})
+    """), {"id": generated_user_id, "phone": phone})
     
     row = result.mappings().first()
     user_id = row["id"]
-    # If created_at == updated_at (within microsecond), it's likely new. 
-    # But more robustly, we use the fact that Postgres RETURNING works for the conflicted row too.
-    
     # We fetch the full object to return a model instance
     user_result = await session.execute(select(User).where(User.id == user_id))
     user = user_result.scalars().first()
-    
-    # is_new detection: if row was just created, created_at will be very recent.
-    # However, in a real system we'd ideally have a cleaner flag.
-    # For this audit fix, the priority is ATOMICITY over the is_new flag accuracy,
-    # but we can check if updated_at was actually changed (we didn't change it in DO UPDATE SET updated_at = users.updated_at).
     
     is_new = (now := datetime.now(timezone.utc)) - user.created_at < timedelta(seconds=1)
     
@@ -199,6 +181,9 @@ def user_to_dict(user: User) -> dict:
         "name": user.name,
         "email": user.email,
         "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+        "vehicle_type": user.vehicle_type,
+        "preferred_connector": user.preferred_connector,
+        "expo_push_token": user.expo_push_token,
         "is_active": user.is_active,
     }
 
